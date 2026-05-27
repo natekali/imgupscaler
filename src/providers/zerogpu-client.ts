@@ -3,7 +3,7 @@ import { config } from "../config";
 import type { RunContext, UpscaleProvider } from "./types";
 
 /**
- * Tier 2 — Hugging Face ZeroGPU Space running NVIDIA PiD (free, best-effort accelerator).
+ * Tier 2, Hugging Face ZeroGPU Space running NVIDIA PiD (free, best-effort accelerator).
  *
  * Called anonymously via @gradio/client, so it draws on HF's shared anonymous GPU quota:
  * it may succeed instantly or be unavailable. Either way the orchestrator fails over to

@@ -1,5 +1,5 @@
 """
-Resolve — Hugging Face ZeroGPU Space (Tier 2 backend).
+Upscaler AI, Hugging Face ZeroGPU Space (Tier 2 backend).
 
 Wraps NVIDIA PiD's official image-upscaling entrypoint (`from_clean_flux`) in a Gradio
 app with a `/upscale` API endpoint so the static frontend can call it via @gradio/client.
@@ -9,7 +9,7 @@ exhausted the frontend simply falls through to the next engine, so users never s
 error here.
 
 ────────────────────────────────────────────────────────────────────────────────────────
-DEPLOY NOTES (validate once on the GPU — these can't be tested without CUDA):
+DEPLOY NOTES (validate once on the GPU, these can't be tested without CUDA):
   1. Confirm the exact CLI flags:  python -m pid._src.inference.from_clean_flux --help
      (arg names like --input_path / --output_dir / --pid_ckpt_type are from the README;
       adjust below if the repo differs.)
@@ -82,7 +82,7 @@ demo = gr.Interface(
     fn=upscale,
     inputs=gr.Image(type="pil", label="Low-resolution image"),
     outputs=gr.Image(type="pil", label="Upscaled 4×"),
-    title="Resolve · NVIDIA PiD Upscaler",
+    title="Upscaler AI · NVIDIA PiD Upscaler",
     description="4× super-resolution powered by NVIDIA's PiD pixel-diffusion decoder.",
     flagging_mode="never",
     api_name="upscale",

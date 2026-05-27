@@ -1,4 +1,4 @@
-# Resolve — HF ZeroGPU Space dependencies.
+# Upscaler AI, HF ZeroGPU Space dependencies.
 # PiD is installed straight from the official repo; it brings its own deps
 # (diffusers>=0.37, transformers>=4.57, hydra-core, omegaconf, einops, safetensors, …)
 # via its setup.py.

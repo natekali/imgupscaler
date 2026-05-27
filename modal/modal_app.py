@@ -1,15 +1,15 @@
 """
-Resolve — Modal serverless GPU backend (Tier 1, reliable primary).
+Upscaler AI, Modal serverless GPU backend (Tier 1, reliable primary).
 
 Runs NVIDIA PiD's `from_clean_flux` upscaler on a Modal GPU and exposes a CORS-enabled
 `POST /upscale` endpoint that the static GitHub Pages frontend calls directly. Modal's
 free monthly credits (~$30) cover on the order of a few thousand upscales/month, with
-proper request attribution — this is what makes "always returns a result" true at the GPU
+proper request attribution, this is what makes "always returns a result" true at the GPU
 tier, since no secret ever has to live in the public browser bundle (Modal auth is
 server-side).
 
 Deploy:   modal deploy modal/modal_app.py
-The deploy prints the public URL — put it in src/config.ts as `modalEndpoint`.
+The deploy prints the public URL, put it in src/config.ts as `modalEndpoint`.
 
 ────────────────────────────────────────────────────────────────────────────────────────
 DEPLOY NOTES (validate once on the GPU):

@@ -1,5 +1,5 @@
 /* ============================================================
-   Resolve — optical-instrument aesthetic
+   Upscaler AI, optical-instrument aesthetic
    Near-black lab surface · optical serif · acid-lime signal
    ============================================================ */
 
@@ -766,5 +766,49 @@ img-comparison-slider img {
   }
   .meta {
     justify-content: space-between;
+  }
+}
+
+/* ---------- wordmark accent ("AI") ---------- */
+.word-ai {
+  color: var(--signal);
+  font-style: italic;
+  margin-left: 2px;
+}
+
+/* ---------- responsive refinements ---------- */
+@media (max-width: 600px) {
+  .masthead {
+    padding-block: 18px;
+  }
+  .pid-badge {
+    font-size: 10px;
+    padding: 7px 11px;
+    gap: 7px;
+  }
+  .quality-toggle {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .q-opt {
+    max-width: none;
+    flex-direction: row;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .dropzone {
+    min-height: 240px;
+    padding: 32px 20px;
+  }
+}
+@media (max-width: 560px) {
+  .actions {
+    flex-wrap: wrap;
+  }
+  .fmt-toggle {
+    order: -1;
+    flex-basis: 100%;
+    justify-content: center;
   }
 }

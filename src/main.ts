@@ -5,7 +5,7 @@ import { getDimensions } from "./image-utils";
 import type { Quality } from "./config";
 
 /* ------------------------------------------------------------------ *
- * Resolve — UI state machine.
+ * Upscaler AI, UI state machine.
  * States: idle → processing → (result | error). The in-browser engine
  * means "error" is rare; it's there only for truly broken inputs.
  * ------------------------------------------------------------------ */
@@ -64,7 +64,7 @@ function setState(state: State): void {
 
 function validate(file: File): string | null {
   if (!ACCEPTED.includes(file.type)) return "Please use a PNG, JPG, or WebP image.";
-  if (file.size > MAX_FILE_BYTES) return "That image is over 25 MB — please use a smaller file.";
+  if (file.size > MAX_FILE_BYTES) return "That image is over 25 MB. Please use a smaller file.";
   return null;
 }
 
@@ -86,7 +86,7 @@ async function handleFile(file: File): Promise<void> {
     await showResult(file, blob, engine);
   } catch (err) {
     if (err instanceof CancelledError) {
-      reset(); // user bailed — quietly return to idle
+      reset(); // user bailed, quietly return to idle
       return;
     }
     showError(err instanceof Error ? err.message : "Something went wrong. Try another image.");
@@ -126,7 +126,7 @@ async function showResult(original: Blob, result: Blob, engine: string): Promise
   after.alt = "Upscaled image";
   slider.append(before, after);
 
-  // Credit the engine that actually ran — don't claim PiD when the in-browser floor produced it.
+  // Credit the engine that actually ran, don't claim PiD when the in-browser floor produced it.
   const beforeTag = tag("Before", "cmp-tag--before");
   const afterTag = tag(`After · ${engine}`, "cmp-tag--after");
   compareWrap.append(slider, beforeTag, afterTag);
@@ -192,7 +192,7 @@ function download(): void {
   const url = URL.createObjectURL(downloadBlob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `resolve-4k-${Date.now()}.${format === "jpeg" ? "jpg" : "png"}`;
+  a.download = `upscaler-ai-4k-${Date.now()}.${format === "jpeg" ? "jpg" : "png"}`;
   document.body.appendChild(a);
   a.click();
   a.remove();

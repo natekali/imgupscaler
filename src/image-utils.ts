@@ -15,7 +15,7 @@ export async function getDimensions(blob: Blob): Promise<Dimensions> {
 /**
  * Downscale an image so its longest edge is at most `maxEdge`, preserving aspect ratio.
  * Returns the original blob unchanged if it's already within bounds. Used before sending
- * to GPU backends to save compute and avoid VRAM blowups — the remote engine then
+ * to GPU backends to save compute and avoid VRAM blowups, the remote engine then
  * upscales 4×, still yielding a high-resolution result.
  */
 export async function downscaleIfNeeded(blob: Blob, maxEdge: number): Promise<Blob> {

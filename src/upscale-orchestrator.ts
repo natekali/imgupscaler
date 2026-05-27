@@ -27,7 +27,7 @@ export class CancelledError extends Error {
  *
  * Each remote tier gets a wall-clock timeout; on timeout or error we transparently fall
  * through to the next engine. The in-browser tier is always configured and never rejects
- * for capacity reasons, so a result is always produced — the user never sees a hard
+ * for capacity reasons, so a result is always produced, the user never sees a hard
  * "engine unavailable" failure (unless they cancel).
  */
 export async function upscale(
@@ -45,8 +45,8 @@ export async function upscale(
     .filter((p) => p.isConfigured())
     .sort((a, b) => a.tier - b.tier);
 
-  // Cap the longest edge before any engine runs. Saves GPU seconds on remote tiers and —
-  // critically — bounds the in-browser tier's 4× output canvas so a large upload can't OOM
+  // Cap the longest edge before any engine runs. Saves GPU seconds on remote tiers and -
+  // critically, bounds the in-browser tier's 4× output canvas so a large upload can't OOM
   // the tab (the browser tier is the active path until a GPU backend is configured).
   const input = await downscaleIfNeeded(file, config.inputCap[quality]);
 

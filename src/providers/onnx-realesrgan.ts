@@ -8,7 +8,7 @@ const ORT_ESM = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dis
 const ORT_WASM_DIR = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/`;
 
 const SCALE = 4; // Real-ESRGAN x4
-const TILE = 128; // core tile edge (px) — bounds GPU/WASM memory
+const TILE = 128; // core tile edge (px), bounds GPU/WASM memory
 const PAD = 16; // context padding read around each tile, discarded after inference (kills seams)
 
 type OrtModule = typeof import("onnxruntime-web");
@@ -38,7 +38,7 @@ function getSession(ort: OrtModule, url: string): Promise<Ort.InferenceSession> 
       return await ort.InferenceSession.create(url, { executionProviders: ["wasm"] });
     }
   })();
-  // Don't cache a rejected load — a transient network failure would otherwise poison every
+  // Don't cache a rejected load, a transient network failure would otherwise poison every
   // later attempt until a full reload. Only memoize the session once it resolves.
   attempt.catch(() => {
     if (sessions.get(url) === attempt) sessions.delete(url);
@@ -48,7 +48,7 @@ function getSession(ort: OrtModule, url: string): Promise<Ort.InferenceSession> 
 }
 
 /**
- * Tier 3 — Real-ESRGAN x4 running entirely in the browser via onnxruntime-web.
+ * Tier 3, Real-ESRGAN x4 running entirely in the browser via onnxruntime-web.
  *
  * This engine can never be "busy" or rate-limited: it is the unconditional floor that
  * guarantees every upload returns a result, even fully offline once the model is cached.
@@ -74,6 +74,7 @@ export class BrowserProvider implements UpscaleProvider {
 
     const src = await blobToImageData(input);
     const { width: w, height: h } = src;
+    const hasAlpha = detectAlpha(src);
 
     const outCanvas = new OffscreenCanvas(w * SCALE, h * SCALE);
     const outCtx = outCanvas.getContext("2d");
@@ -126,8 +127,46 @@ export class BrowserProvider implements UpscaleProvider {
       }
     }
 
+    // The model upscales RGB only; if the source had transparency, upscale its alpha channel
+    // separately (bilinear) and re-apply it so transparent PNGs don't composite onto black.
+    if (hasAlpha) {
+      await applyUpscaledAlpha(input, outCtx, w * SCALE, h * SCALE);
+    }
+
     return outCanvas.convertToBlob({ type: "image/png" });
   }
+}
+
+/** True if any pixel is not fully opaque. */
+function detectAlpha(img: ImageData): boolean {
+  for (let i = 3; i < img.data.length; i += 4) {
+    if (img.data[i] < 255) return true;
+  }
+  return false;
+}
+
+/** Bilinearly upscale the source's alpha channel and write it into the SR output. */
+async function applyUpscaledAlpha(
+  source: Blob,
+  outCtx: OffscreenCanvasRenderingContext2D,
+  outW: number,
+  outH: number,
+): Promise<void> {
+  const bitmap = await createImageBitmap(source);
+  const alphaCanvas = new OffscreenCanvas(outW, outH);
+  const ac = alphaCanvas.getContext("2d");
+  if (!ac) return;
+  ac.imageSmoothingEnabled = true;
+  ac.imageSmoothingQuality = "high";
+  ac.drawImage(bitmap, 0, 0, outW, outH);
+  bitmap.close();
+
+  const scaled = ac.getImageData(0, 0, outW, outH);
+  const out = outCtx.getImageData(0, 0, outW, outH);
+  for (let i = 3; i < out.data.length; i += 4) {
+    out.data[i] = scaled.data[i];
+  }
+  outCtx.putImageData(out, 0, 0);
 }
 
 /* ---------- pixel <-> tensor helpers (ort-agnostic) ---------- */

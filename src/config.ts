@@ -1,9 +1,9 @@
 /**
- * Backend configuration — PUBLIC, NON-SECRET values only.
+ * Backend configuration, PUBLIC, NON-SECRET values only.
  *
  * These URLs are safe to ship in a public static bundle: they are endpoints, not
  * credentials. No API token, HF token, or GitHub PAT ever belongs in this file or any
- * other file under src/ — a GitHub Pages site is world-readable. Backend auth lives
+ * other file under src/, a GitHub Pages site is world-readable. Backend auth lives
  * server-side (inside the Modal function / HF Space), never in the browser.
  *
  * Tiers the orchestrator tries in order. Leave a value empty ("") to disable that tier;
@@ -19,11 +19,11 @@ export interface OnnxModel {
 }
 
 export interface AppConfig {
-  /** Tier 1 — Modal serverless GPU endpoint (reliable primary). Full https URL of the POST endpoint. */
+  /** Tier 1, Modal serverless GPU endpoint (reliable primary). Full https URL of the POST endpoint. */
   modalEndpoint: string;
-  /** Tier 2 — Hugging Face ZeroGPU Space id, e.g. "natekali/pid-upscaler" (free accelerator). */
+  /** Tier 2, Hugging Face ZeroGPU Space id, e.g. "natekali/pid-upscaler" (free accelerator). */
   hfSpace: string;
-  /** Tier 3 — in-browser Real-ESRGAN models, by quality. Vendored same-origin (no CORS). */
+  /** Tier 3, in-browser Real-ESRGAN models, by quality. Vendored same-origin (no CORS). */
   onnxModels: Record<Quality, OnnxModel>;
   defaultQuality: Quality;
   /** Longest input edge (px) before 4× upscaling, per quality. Bounds compute + output size. */
@@ -41,9 +41,9 @@ export const config: AppConfig = {
   hfSpace: "",
 
   onnxModels: {
-    // Tiny SRVGG compact model — instant, great default.
+    // Tiny SRVGG compact model, instant, great default.
     fast: { url: `${base}models/realesr-general-x4v3.onnx`, label: "Real-ESRGAN" },
-    // Full RRDBNet x4plus — higher detail, heavier (best with WebGPU).
+    // Full RRDBNet x4plus, higher detail, heavier (best with WebGPU).
     high: { url: `${base}models/realesrgan-x4plus.onnx`, label: "Real-ESRGAN HD" },
   },
   defaultQuality: "fast",

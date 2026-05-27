@@ -2,11 +2,11 @@ import { config } from "../config";
 import type { RunContext, UpscaleProvider } from "./types";
 
 /**
- * Tier 1 — Modal serverless GPU running NVIDIA PiD (reliable primary).
+ * Tier 1, Modal serverless GPU running NVIDIA PiD (reliable primary).
  *
  * Posts the image as multipart/form-data to the CORS-enabled Modal endpoint and gets
  * back the upscaled PNG. No credentials travel from the browser: the Modal function
- * authenticates server-side. The endpoint is stateless — it deletes its temp files per
+ * authenticates server-side. The endpoint is stateless, it deletes its temp files per
  * request, so nothing is stored.
  */
 export class ModalProvider implements UpscaleProvider {

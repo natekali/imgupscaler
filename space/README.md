@@ -1,5 +1,5 @@
 ---
-title: Resolve PiD Upscaler
+title: Upscaler AI PiD Upscaler
 emoji: 🔭
 colorFrom: gray
 colorTo: green
@@ -11,10 +11,10 @@ license: apache-2.0
 short_description: 4x image super-resolution powered by NVIDIA PiD
 ---
 
-# Resolve · NVIDIA PiD Upscaler (Space backend)
+# Upscaler AI · NVIDIA PiD Upscaler (Space backend)
 
 This Space is the free, best-effort GPU backend (Tier 2) for the
-[Resolve](https://github.com/natekali/imgupscaler) image upscaler. It wraps NVIDIA's
+[Upscaler AI](https://github.com/natekali/imgupscaler) image upscaler. It wraps NVIDIA's
 [PiD](https://github.com/nv-tlabs/PiD) pixel-diffusion decoder and exposes an `/upscale`
 API endpoint that the static frontend calls anonymously via `@gradio/client`.
 
@@ -25,6 +25,6 @@ API endpoint that the static frontend calls anonymously via `@gradio/client`.
    Gradio-only, which is why this backend uses the Gradio SDK).
 3. First request cold-starts while weights load into VRAM; later calls are fast.
 
-No secrets live here that the frontend can see — the frontend never sends a token, so this
+No secrets live here that the frontend can see, the frontend never sends a token, so this
 backend draws on HF's shared anonymous GPU quota. When that's exhausted, the website simply
 falls over to its next engine, so users are never blocked.
