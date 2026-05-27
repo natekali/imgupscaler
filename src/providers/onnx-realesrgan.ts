@@ -47,14 +47,20 @@ export class BrowserProvider implements UpscaleProvider {
   private getSession(ort: OrtModule): Promise<Ort.InferenceSession> {
     if (this.sessionPromise) return this.sessionPromise;
     const url = config.onnxModelUrl;
-    this.sessionPromise = (async () => {
+    const attempt = (async () => {
       try {
         return await ort.InferenceSession.create(url, { executionProviders: ["webgpu"] });
       } catch {
         return await ort.InferenceSession.create(url, { executionProviders: ["wasm"] });
       }
     })();
-    return this.sessionPromise;
+    // Don't cache a rejected load — a transient network failure would otherwise poison every
+    // later attempt until a full reload. Only memoize the session once it resolves.
+    attempt.catch(() => {
+      if (this.sessionPromise === attempt) this.sessionPromise = null;
+    });
+    this.sessionPromise = attempt;
+    return attempt;
   }
 
   async run(input: Blob, ctx: RunContext): Promise<Blob> {

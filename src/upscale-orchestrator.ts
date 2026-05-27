@@ -26,13 +26,13 @@ export async function upscale(
     .filter((p) => p.isConfigured())
     .sort((a, b) => a.tier - b.tier);
 
-  // Prepare a (possibly downscaled) copy for the GPU tiers; the browser tier handles full
-  // resolution itself via tiling.
-  const remoteInput = await downscaleIfNeeded(file, config.maxRemoteInputEdge);
+  // Cap the longest edge before any engine runs. This saves GPU seconds on the remote tiers
+  // and — critically — bounds the in-browser tier's 4× output canvas so a large upload can't
+  // OOM the tab (the browser tier is the active path until a GPU backend is configured).
+  const input = await downscaleIfNeeded(file, config.maxRemoteInputEdge);
 
   let lastError: unknown;
   for (const provider of providers) {
-    const input = provider.tier === 3 ? file : remoteInput;
     const timeoutMs = timeoutFor(provider);
     const controller = new AbortController();
     const timer =

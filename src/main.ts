@@ -155,8 +155,9 @@ function download(): void {
   document.body.appendChild(a);
   a.click();
   a.remove();
-  // Release immediately after the download is triggered — the file is the user's now.
-  URL.revokeObjectURL(url);
+  // Defer the revoke: revoking synchronously can abort the save in Firefox/Safari before
+  // the download stream starts. A short delay lets the browser take ownership first.
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
 function reset(): void {

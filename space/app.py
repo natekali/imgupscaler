@@ -84,7 +84,7 @@ demo = gr.Interface(
     outputs=gr.Image(type="pil", label="Upscaled 4×"),
     title="Resolve · NVIDIA PiD Upscaler",
     description="4× super-resolution powered by NVIDIA's PiD pixel-diffusion decoder.",
-    allow_flagging="never",
+    flagging_mode="never",
     api_name="upscale",
 )
 
