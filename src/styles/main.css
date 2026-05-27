@@ -869,3 +869,46 @@ img-comparison-slider img {
 .engine-notice[hidden] {
   display: none;
 }
+
+/* ---------- SEO / about + FAQ ---------- */
+.about {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 52px clamp(20px, 5vw, 48px) 8px;
+  border-top: 1px solid var(--line);
+}
+.about h2 {
+  font-family: var(--display);
+  font-weight: 300;
+  font-size: clamp(24px, 4vw, 34px);
+  letter-spacing: -0.02em;
+  margin: 0 0 16px;
+}
+.about > p {
+  color: var(--ink-dim);
+  font-size: 15px;
+  line-height: 1.7;
+  max-width: 640px;
+  margin: 0 0 34px;
+}
+.faq {
+  margin: 0;
+  display: grid;
+  gap: 22px;
+}
+.faq dt {
+  font-family: var(--mono);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  margin-bottom: 6px;
+}
+.faq dd {
+  margin: 0;
+  color: var(--ink-dim);
+  font-size: 14px;
+  line-height: 1.6;
+}
