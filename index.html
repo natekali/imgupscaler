@@ -50,7 +50,17 @@
       </section>
 
       <section class="stage" data-state="idle" aria-live="polite">
-        <!-- IDLE: drop zone -->
+        <!-- IDLE: quality selector + drop zone -->
+        <div class="quality-toggle" role="radiogroup" aria-label="Engine quality">
+          <button class="q-opt is-active" data-quality="fast" role="radio" aria-checked="true" type="button">
+            <span class="q-name">Fast</span>
+            <span class="q-desc">Instant · great for most images</span>
+          </button>
+          <button class="q-opt" data-quality="high" role="radio" aria-checked="false" type="button">
+            <span class="q-name">High Detail</span>
+            <span class="q-desc">Sharper · heavier model</span>
+          </button>
+        </div>
         <label class="dropzone" id="dropzone">
           <input type="file" id="file-input" accept="image/png,image/jpeg,image/webp" hidden />
           <span class="crop crop--tl" aria-hidden="true"></span>
@@ -80,6 +90,7 @@
           <div class="proc-readout">
             <span class="proc-status" id="proc-status">Initializing engine…</span>
             <div class="proc-bar"><span class="proc-bar-fill" id="proc-bar-fill"></span></div>
+            <button class="proc-cancel" id="cancel-btn" type="button">Cancel</button>
           </div>
         </div>
 
@@ -89,6 +100,10 @@
           <div class="result-bar">
             <dl class="meta" id="result-meta"></dl>
             <div class="actions">
+              <div class="fmt-toggle" role="radiogroup" aria-label="Download format">
+                <button class="fmt-opt is-active" data-fmt="png" role="radio" aria-checked="true" type="button">PNG</button>
+                <button class="fmt-opt" data-fmt="jpeg" role="radio" aria-checked="false" type="button">JPG</button>
+              </div>
               <button class="btn btn--ghost" id="reset-btn" type="button">New image</button>
               <button class="btn btn--signal" id="download-btn" type="button">
                 Download 4K

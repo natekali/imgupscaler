@@ -20,9 +20,17 @@ browser tries a **failover chain** and stops at the first engine that returns:
 | **2** | NVIDIA **PiD** on a [HuggingFace ZeroGPU Space](https://huggingface.co/docs/hub/spaces-zerogpu) | Free, best-effort accelerator |
 | **3** | **Real-ESRGAN x4** via [onnxruntime-web](https://onnxruntime.ai/docs/tutorials/web/) (WebGPU→WASM) | In-browser floor — can never be "busy", works offline |
 
-The in-browser tier (a 4.9 MB model vendored at `public/models/`) is the guarantee: even with
-zero GPU backends alive, every upload still produces an upscaled image — at lower quality than
-PiD, but it always works.
+The in-browser tier ships two vendored models in `public/models/`, selectable in the UI:
+**Fast** (`realesr-general-x4v3`, 4.9 MB — instant) and **High Detail** (`RealESRGAN_x4plus`,
+67 MB — sharper, best with WebGPU). This tier is the guarantee: even with zero GPU backends
+alive, every upload still produces an upscaled image, fully on-device.
+
+> **Do you even need the GPU tiers?** For most images, no — the in-browser engine is a
+> complete, free, infinitely-scalable, private product on its own. The PiD tiers are an
+> optional quality upgrade for hard cases, not a requirement.
+
+Other niceties: drag-drop **or** paste an image (Ctrl/Cmd+V), cancel mid-process, before/after
+slider, and PNG/JPG download.
 
 ## Privacy — nothing is stored
 

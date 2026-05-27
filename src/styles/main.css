@@ -546,6 +546,89 @@ img-comparison-slider img {
   cursor: not-allowed;
 }
 
+/* ---------- quality toggle (idle only) ---------- */
+.quality-toggle {
+  display: none;
+}
+.stage[data-state="idle"] .quality-toggle {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+.q-opt {
+  flex: 1;
+  max-width: 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.012);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.3s var(--ease), background 0.3s var(--ease);
+}
+.q-opt:hover {
+  border-color: var(--line-strong);
+}
+.q-opt.is-active {
+  border-color: var(--signal);
+  background: var(--signal-dim);
+}
+.q-name {
+  font-family: var(--display);
+  font-size: 16px;
+}
+.q-desc {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  color: var(--ink-faint);
+}
+
+/* ---------- cancel (processing) ---------- */
+.proc-cancel {
+  align-self: center;
+  margin-top: 4px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 6px 10px;
+  transition: color 0.3s var(--ease);
+}
+.proc-cancel:hover {
+  color: var(--danger);
+}
+
+/* ---------- download format toggle ---------- */
+.fmt-toggle {
+  display: inline-flex;
+  border: 1px solid var(--line-strong);
+  border-radius: 100px;
+  overflow: hidden;
+}
+.fmt-opt {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 10px 16px;
+  background: transparent;
+  color: var(--ink-dim);
+  border: none;
+  cursor: pointer;
+  transition: background 0.3s var(--ease), color 0.3s var(--ease);
+}
+.fmt-opt.is-active {
+  background: var(--signal);
+  color: #0a0b0c;
+}
+
 /* ---------- error ---------- */
 .errorbox {
   flex-direction: column;

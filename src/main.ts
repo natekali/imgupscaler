@@ -1,7 +1,8 @@
 import "./styles/main.css";
 import "img-comparison-slider";
-import { upscale } from "./upscale-orchestrator";
+import { upscale, CancelledError } from "./upscale-orchestrator";
 import { getDimensions } from "./image-utils";
+import type { Quality } from "./config";
 
 /* ------------------------------------------------------------------ *
  * Resolve — UI state machine.
@@ -13,6 +14,7 @@ const MAX_FILE_BYTES = 25 * 1024 * 1024; // 25 MB upload cap
 const ACCEPTED = ["image/png", "image/jpeg", "image/webp"];
 
 type State = "idle" | "processing" | "result" | "error";
+type Format = "png" | "jpeg";
 
 // Every object URL we mint is tracked here and revoked on reset / unload, so an image
 // never lingers in memory longer than the user needs it.
@@ -39,6 +41,7 @@ const dropzone = $<HTMLLabelElement>("#dropzone");
 const procImg = $<HTMLImageElement>("#proc-img");
 const procStatus = $<HTMLElement>("#proc-status");
 const procBarFill = $<HTMLElement>("#proc-bar-fill");
+const cancelBtn = $<HTMLButtonElement>("#cancel-btn");
 const compareWrap = $<HTMLElement>("#compare-wrap");
 const resultMeta = $<HTMLElement>("#result-meta");
 const downloadBtn = $<HTMLButtonElement>("#download-btn");
@@ -46,7 +49,12 @@ const resetBtn = $<HTMLButtonElement>("#reset-btn");
 const errMsg = $<HTMLElement>("#err-msg");
 const errReset = $<HTMLButtonElement>("#err-reset");
 
-let resultBlob: Blob | null = null;
+let quality: Quality = "fast";
+let format: Format = "png";
+let pngBlob: Blob | null = null; // raw engine output (PNG)
+let downloadBlob: Blob | null = null; // possibly re-encoded for the chosen format
+let sizeEl: HTMLElement | null = null; // meta cell we live-update on format change
+let activeRun: AbortController | null = null;
 
 function setState(state: State): void {
   stage.dataset.state = state;
@@ -68,11 +76,19 @@ async function handleFile(file: File): Promise<void> {
   procImg.src = objectUrl(file);
   setProgress("Initializing engine…");
 
+  activeRun = new AbortController();
   try {
-    const { blob, engine, tier } = await upscale(file, { onProgress: setProgress });
-    resultBlob = blob;
-    await showResult(file, blob, engine, tier);
+    const { blob, engine } = await upscale(file, {
+      quality,
+      signal: activeRun.signal,
+      onProgress: setProgress,
+    });
+    await showResult(file, blob, engine);
   } catch (err) {
+    if (err instanceof CancelledError) {
+      reset(); // user bailed — quietly return to idle
+      return;
+    }
     showError(err instanceof Error ? err.message : "Something went wrong. Try another image.");
   }
 }
@@ -92,7 +108,8 @@ function setProgress(message: string): void {
 
 /* ---------------- result ---------------- */
 
-async function showResult(original: Blob, result: Blob, engine: string, tier: number): Promise<void> {
+async function showResult(original: Blob, result: Blob, engine: string): Promise<void> {
+  pngBlob = result;
   const dims = await getDimensions(result);
 
   compareWrap.style.position = "relative";
@@ -111,18 +128,21 @@ async function showResult(original: Blob, result: Blob, engine: string, tier: nu
 
   // Credit the engine that actually ran — don't claim PiD when the in-browser floor produced it.
   const beforeTag = tag("Before", "cmp-tag--before");
-  const afterTag = tag(`After · ${engine.replace(" (in-browser)", "")}`, "cmp-tag--after");
+  const afterTag = tag(`After · ${engine}`, "cmp-tag--after");
   compareWrap.append(slider, beforeTag, afterTag);
 
-  resultMeta.replaceChildren();
-  resultMeta.append(
+  const size = metaItem("Size", formatBytes(result.size));
+  sizeEl = size.querySelector("dd");
+  resultMeta.replaceChildren(
     metaItem("Engine", engine),
     metaItem("Output", `${dims.width} × ${dims.height}`),
     metaItem("Scale", "4×", true),
+    size,
   );
-  // tier is reflected through the engine label; kept for future telemetry-free debugging.
-  void tier;
 
+  format = "png";
+  syncFormatButtons();
+  downloadBlob = result;
   setState("result");
 }
 
@@ -144,14 +164,35 @@ function metaItem(label: string, value: string, signal = false): HTMLElement {
   return wrap;
 }
 
+function formatBytes(n: number): string {
+  return n >= 1024 * 1024
+    ? `${(n / (1024 * 1024)).toFixed(1)} MB`
+    : `${Math.max(1, Math.round(n / 1024))} KB`;
+}
+
+/** Re-encode the PNG output to the chosen format and refresh the displayed size. */
+async function prepareDownload(): Promise<void> {
+  if (!pngBlob) return;
+  if (format === "png") {
+    downloadBlob = pngBlob;
+  } else {
+    const bitmap = await createImageBitmap(pngBlob);
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+    canvas.getContext("2d")!.drawImage(bitmap, 0, 0);
+    bitmap.close();
+    downloadBlob = await canvas.convertToBlob({ type: "image/jpeg", quality: 0.92 });
+  }
+  if (sizeEl) sizeEl.textContent = formatBytes(downloadBlob.size);
+}
+
 /* ---------------- download / reset / error ---------------- */
 
 function download(): void {
-  if (!resultBlob) return;
-  const url = URL.createObjectURL(resultBlob);
+  if (!downloadBlob) return;
+  const url = URL.createObjectURL(downloadBlob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `resolve-4k-${Date.now()}.png`;
+  a.download = `resolve-4k-${Date.now()}.${format === "jpeg" ? "jpg" : "png"}`;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -161,11 +202,15 @@ function download(): void {
 }
 
 function reset(): void {
+  activeRun?.abort();
+  activeRun = null;
   revokeAll();
-  resultBlob = null;
+  pngBlob = null;
+  downloadBlob = null;
+  sizeEl = null;
   fileInput.value = "";
   procImg.removeAttribute("src");
-  compareWrap.innerHTML = "";
+  compareWrap.replaceChildren();
   setProgress("Initializing engine…");
   setState("idle");
 }
@@ -174,6 +219,35 @@ function showError(message: string): void {
   errMsg.textContent = message;
   setState("error");
 }
+
+/* ---------------- toggles ---------------- */
+
+function syncFormatButtons(): void {
+  document.querySelectorAll<HTMLButtonElement>(".fmt-opt").forEach((b) => {
+    const active = b.dataset.fmt === format;
+    b.classList.toggle("is-active", active);
+    b.setAttribute("aria-checked", String(active));
+  });
+}
+
+document.querySelectorAll<HTMLButtonElement>(".q-opt").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    quality = btn.dataset.quality as Quality;
+    document.querySelectorAll<HTMLButtonElement>(".q-opt").forEach((b) => {
+      const active = b === btn;
+      b.classList.toggle("is-active", active);
+      b.setAttribute("aria-checked", String(active));
+    });
+  });
+});
+
+document.querySelectorAll<HTMLButtonElement>(".fmt-opt").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    format = btn.dataset.fmt as Format;
+    syncFormatButtons();
+    void prepareDownload();
+  });
+});
 
 /* ---------------- events ---------------- */
 
@@ -203,6 +277,19 @@ dropzone.addEventListener("drop", (e) => {
 window.addEventListener("dragover", (e) => e.preventDefault());
 window.addEventListener("drop", (e) => e.preventDefault());
 
+// Paste an image straight from the clipboard (Ctrl/Cmd+V).
+window.addEventListener("paste", (e) => {
+  const item = Array.from(e.clipboardData?.items ?? []).find(
+    (i) => i.kind === "file" && i.type.startsWith("image/"),
+  );
+  const file = item?.getAsFile();
+  if (file) {
+    if (stage.dataset.state !== "idle") reset();
+    void handleFile(file);
+  }
+});
+
+cancelBtn.addEventListener("click", reset);
 downloadBtn.addEventListener("click", download);
 resetBtn.addEventListener("click", reset);
 errReset.addEventListener("click", reset);

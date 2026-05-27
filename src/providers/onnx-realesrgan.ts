@@ -1,5 +1,4 @@
 import type * as Ort from "onnxruntime-web";
-import { config } from "../config";
 import type { RunContext, UpscaleProvider } from "./types";
 
 // onnxruntime-web is loaded from a CDN on demand (not bundled): it's only needed when the
@@ -26,6 +25,28 @@ async function loadOrt(): Promise<OrtModule> {
   return ortPromise;
 }
 
+// Sessions are cached per model URL so switching quality back and forth doesn't reload.
+const sessions = new Map<string, Promise<Ort.InferenceSession>>();
+
+function getSession(ort: OrtModule, url: string): Promise<Ort.InferenceSession> {
+  const cached = sessions.get(url);
+  if (cached) return cached;
+  const attempt = (async () => {
+    try {
+      return await ort.InferenceSession.create(url, { executionProviders: ["webgpu"] });
+    } catch {
+      return await ort.InferenceSession.create(url, { executionProviders: ["wasm"] });
+    }
+  })();
+  // Don't cache a rejected load — a transient network failure would otherwise poison every
+  // later attempt until a full reload. Only memoize the session once it resolves.
+  attempt.catch(() => {
+    if (sessions.get(url) === attempt) sessions.delete(url);
+  });
+  sessions.set(url, attempt);
+  return attempt;
+}
+
 /**
  * Tier 3 — Real-ESRGAN x4 running entirely in the browser via onnxruntime-web.
  *
@@ -34,39 +55,21 @@ async function loadOrt(): Promise<OrtModule> {
  * Quality is below PiD, but it always works. Runtime + model are lazy-loaded on first use.
  */
 export class BrowserProvider implements UpscaleProvider {
-  readonly name = "Real-ESRGAN (in-browser)";
   readonly tier = 3;
 
-  private sessionPromise: Promise<Ort.InferenceSession> | null = null;
+  constructor(
+    readonly name: string,
+    private readonly modelUrl: string,
+  ) {}
 
   isConfigured(): boolean {
-    return config.onnxModelUrl.trim().length > 0;
-  }
-
-  /** Load the model once; prefer WebGPU, fall back to WASM. */
-  private getSession(ort: OrtModule): Promise<Ort.InferenceSession> {
-    if (this.sessionPromise) return this.sessionPromise;
-    const url = config.onnxModelUrl;
-    const attempt = (async () => {
-      try {
-        return await ort.InferenceSession.create(url, { executionProviders: ["webgpu"] });
-      } catch {
-        return await ort.InferenceSession.create(url, { executionProviders: ["wasm"] });
-      }
-    })();
-    // Don't cache a rejected load — a transient network failure would otherwise poison every
-    // later attempt until a full reload. Only memoize the session once it resolves.
-    attempt.catch(() => {
-      if (this.sessionPromise === attempt) this.sessionPromise = null;
-    });
-    this.sessionPromise = attempt;
-    return attempt;
+    return this.modelUrl.trim().length > 0;
   }
 
   async run(input: Blob, ctx: RunContext): Promise<Blob> {
     ctx.onProgress?.("Enhancing locally in your browser…");
     const ort = await loadOrt();
-    const session = await this.getSession(ort);
+    const session = await getSession(ort, this.modelUrl);
     throwIfAborted(ctx.signal);
 
     const src = await blobToImageData(input);
