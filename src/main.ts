@@ -275,14 +275,22 @@ function markPidUnavailable(rateLimited: boolean): void {
   if (engine === "pid") setEngineActive("fast");
 }
 
+// Bumped on every engine click so a slow PiD health check can't override a later choice.
+let selectSeq = 0;
 let pidChecking = false;
-async function selectPid(): Promise<void> {
+
+async function selectPid(seq: number): Promise<void> {
   if (pidDisabled || pidChecking) return;
   if (!pidConfigured()) return markPidUnavailable(false);
   pidChecking = true;
   if (pidDesc) pidDesc.textContent = "Checking availability…";
   const available = await checkPidAvailable();
   pidChecking = false;
+  if (seq !== selectSeq) {
+    // The user picked a different engine while we were checking; respect that.
+    if (pidDesc) pidDesc.textContent = "Best quality · GPU diffusion";
+    return;
+  }
   if (available) {
     if (pidDesc) pidDesc.textContent = "Best quality · GPU diffusion";
     clearNotice();
@@ -295,7 +303,8 @@ async function selectPid(): Promise<void> {
 document.querySelectorAll<HTMLButtonElement>(".q-opt").forEach((btn) => {
   btn.addEventListener("click", () => {
     const target = btn.dataset.engine as Engine;
-    if (target === "pid") void selectPid();
+    const seq = ++selectSeq;
+    if (target === "pid") void selectPid(seq);
     else {
       clearNotice();
       setEngineActive(target);
