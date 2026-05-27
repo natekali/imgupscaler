@@ -1,8 +1,8 @@
 import "./styles/main.css";
 import "img-comparison-slider";
-import { upscale, CancelledError } from "./upscale-orchestrator";
+import { upscale, CancelledError, PidUnavailableError, checkPidAvailable } from "./upscale-orchestrator";
 import { getDimensions } from "./image-utils";
-import type { Quality } from "./config";
+import { pidConfigured, type Engine } from "./config";
 
 /* ------------------------------------------------------------------ *
  * Upscaler AI, UI state machine.
@@ -48,8 +48,12 @@ const downloadBtn = $<HTMLButtonElement>("#download-btn");
 const resetBtn = $<HTMLButtonElement>("#reset-btn");
 const errMsg = $<HTMLElement>("#err-msg");
 const errReset = $<HTMLButtonElement>("#err-reset");
+const pidBtn = document.querySelector<HTMLButtonElement>('.q-opt[data-engine="pid"]');
+const pidDesc = document.querySelector<HTMLElement>("#pid-desc");
+const engineNotice = $<HTMLElement>("#engine-notice");
 
-let quality: Quality = "fast";
+let engine: Engine = "fast";
+let pidDisabled = false; // set when PiD is confirmed unavailable / over quota
 let format: Format = "png";
 let pngBlob: Blob | null = null; // raw engine output (PNG)
 let downloadBlob: Blob | null = null; // possibly re-encoded for the chosen format
@@ -74,19 +78,29 @@ async function handleFile(file: File): Promise<void> {
 
   setState("processing");
   procImg.src = objectUrl(file);
-  setProgress("Initializing engine…");
+  setProgress(engine === "pid" ? "Sending to NVIDIA PiD…" : "Initializing engine…");
+  clearNotice();
 
   activeRun = new AbortController();
   try {
-    const { blob, engine } = await upscale(file, {
-      quality,
-      signal: activeRun.signal,
-      onProgress: setProgress,
-    });
-    await showResult(file, blob, engine);
+    const result = await upscale(file, { engine, signal: activeRun.signal, onProgress: setProgress });
+    await showResult(file, result.blob, result.engine);
   } catch (err) {
     if (err instanceof CancelledError) {
       reset(); // user bailed, quietly return to idle
+      return;
+    }
+    if (err instanceof PidUnavailableError) {
+      // PiD is down or over quota: disable the button, tell the user, and don't strand them.
+      markPidUnavailable(err.rateLimited);
+      setProgress("NVIDIA PiD is busy, finishing locally…");
+      try {
+        const result = await upscale(file, { engine: "fast", signal: activeRun.signal, onProgress: setProgress });
+        await showResult(file, result.blob, result.engine);
+      } catch (err2) {
+        if (err2 instanceof CancelledError) reset();
+        else showError("Something went wrong. Try another image.");
+      }
       return;
     }
     showError(err instanceof Error ? err.message : "Something went wrong. Try another image.");
@@ -230,16 +244,72 @@ function syncFormatButtons(): void {
   });
 }
 
+function setEngineActive(target: Engine): void {
+  engine = target;
+  document.querySelectorAll<HTMLButtonElement>(".q-opt").forEach((b) => {
+    const active = b.dataset.engine === target;
+    b.classList.toggle("is-active", active);
+    b.setAttribute("aria-checked", String(active));
+  });
+}
+
+function showNotice(message: string): void {
+  engineNotice.textContent = message;
+  engineNotice.hidden = false;
+}
+function clearNotice(): void {
+  engineNotice.hidden = true;
+}
+
+/** Disable the PiD button and tell the user to come back later. */
+function markPidUnavailable(rateLimited: boolean): void {
+  pidDisabled = true;
+  pidBtn?.classList.add("is-disabled");
+  pidBtn?.setAttribute("aria-disabled", "true");
+  if (pidDesc) pidDesc.textContent = "At capacity, come back later";
+  showNotice(
+    rateLimited
+      ? "NVIDIA PiD has hit its rate limit. Please come back later once it resets."
+      : "NVIDIA PiD is unavailable right now. Please come back later.",
+  );
+  if (engine === "pid") setEngineActive("fast");
+}
+
+let pidChecking = false;
+async function selectPid(): Promise<void> {
+  if (pidDisabled || pidChecking) return;
+  if (!pidConfigured()) return markPidUnavailable(false);
+  pidChecking = true;
+  if (pidDesc) pidDesc.textContent = "Checking availability…";
+  const available = await checkPidAvailable();
+  pidChecking = false;
+  if (available) {
+    if (pidDesc) pidDesc.textContent = "Best quality · GPU diffusion";
+    clearNotice();
+    setEngineActive("pid");
+  } else {
+    markPidUnavailable(false);
+  }
+}
+
 document.querySelectorAll<HTMLButtonElement>(".q-opt").forEach((btn) => {
   btn.addEventListener("click", () => {
-    quality = btn.dataset.quality as Quality;
-    document.querySelectorAll<HTMLButtonElement>(".q-opt").forEach((b) => {
-      const active = b === btn;
-      b.classList.toggle("is-active", active);
-      b.setAttribute("aria-checked", String(active));
-    });
+    const target = btn.dataset.engine as Engine;
+    if (target === "pid") void selectPid();
+    else {
+      clearNotice();
+      setEngineActive(target);
+    }
   });
 });
+
+// If no PiD backend is configured at all, present the option as unavailable up front.
+if (!pidConfigured()) {
+  pidDisabled = true;
+  pidBtn?.classList.add("is-disabled");
+  pidBtn?.setAttribute("aria-disabled", "true");
+  if (pidDesc) pidDesc.textContent = "Not deployed";
+}
 
 document.querySelectorAll<HTMLButtonElement>(".fmt-opt").forEach((btn) => {
   btn.addEventListener("click", () => {

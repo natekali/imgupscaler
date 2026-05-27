@@ -54,9 +54,9 @@ browser**, so for most images you do not need a server or a GPU at all.
 
 | | Feature |
 |---|---|
-| 🧠 | **NVIDIA PiD** diffusion upscaling (optional GPU tier) with a resilient failover chain |
-| ⚡ | **Runs in your browser** by default. No account, no upload to a server, no cost |
-| 🎚️ | **Two quality modes**: Fast (instant) and High Detail (sharper, heavier model) |
+| 🎚️ | **Three engines, you choose**: Fast and High Detail run in your browser; **NVIDIA PiD** runs live on a GPU |
+| 🧠 | **NVIDIA PiD** diffusion upscaling on Modal, auto-disabled with a clear message if it is ever at capacity |
+| ⚡ | The browser engines need **no account, no server, no cost**, and work offline |
 | 🪟 | **Before / after slider** to inspect the result at a glance |
 | 🫧 | **Transparency preserved** for PNGs (alpha is upscaled separately) |
 | 💾 | **Download** as PNG or JPG, with the output file size shown |
@@ -68,30 +68,23 @@ browser**, so for most images you do not need a server or a GPU at all.
 
 ## 🧠 How It Works
 
-Free GPU capacity is scarce, so a single backend would inevitably show "busy" under load. Instead,
-the browser walks a **failover chain** and stops at the first engine that returns a result:
+You pick the engine. Two run on your own machine, one runs NVIDIA PiD on a GPU:
 
-| Tier | Engine | Role |
-|------|--------|------|
-| **1** | NVIDIA **PiD** on [Modal](https://modal.com) (serverless GPU) | Reliable primary. Free credits, CORS, secret stays server side |
-| **2** | NVIDIA **PiD** on a [Hugging Face ZeroGPU Space](https://huggingface.co/docs/hub/spaces-zerogpu) | Free, best effort accelerator |
-| **3** | **Real-ESRGAN x4** via [onnxruntime-web](https://onnxruntime.ai/docs/tutorials/web/) (WebGPU, WASM) | In-browser floor. Can never be "busy", works offline |
+| Engine | Where it runs | Notes |
+|--------|---------------|-------|
+| **Fast** | Browser, `realesr-general-x4v3` (4.9 MB) | Instant, great for most images, works offline |
+| **High Detail** | Browser, `RealESRGAN_x4plus` (67 MB) | Sharper, heavier, best with WebGPU |
+| **NVIDIA PiD** | GPU via [Modal](https://modal.com) (serverless) | The headline diffusion model, 4× to 2048px, cold start up to a minute |
 
-```
-upload ──► Tier 1 (Modal/PiD) ──► Tier 2 (HF/PiD) ──► Tier 3 (in-browser) ──► result
-              (timeout/fail)         (timeout/fail)        (always returns)
-```
+The browser models are vendored same-origin in `public/models/` and lazy-loaded on first use, so
+the site is fully functional with no backend at all. The **NVIDIA PiD** engine calls a CORS-enabled
+Modal endpoint (no secret in the browser, auth stays server side). PiD internally tries Modal first,
+then an optional [Hugging Face ZeroGPU Space](https://huggingface.co/docs/hub/spaces-zerogpu); if no
+PiD backend can serve, or its rate limit is reached, the **PiD button disables itself with a "come
+back later" message** and the upload finishes on the local Fast engine so you are never stranded.
 
-Tier 3 is the guarantee. It ships two vendored models in `public/models/`, selectable in the UI:
-
-- **Fast** : `realesr-general-x4v3` (4.9 MB), instant, great for most images.
-- **High Detail** : `RealESRGAN_x4plus` (67 MB), sharper, best with WebGPU.
-
-Even with both GPU tiers offline, every upload still produces an upscaled image, fully on device.
-
-> **Do you even need the GPU tiers?** For most images, no. The in-browser engine is a complete,
-> free, infinitely scalable, private product on its own. The PiD tiers are an optional quality
-> upgrade for hard cases, not a requirement, which is why they ship disabled by default.
+> **Which should you use?** Fast for everyday images (instant, private, free). NVIDIA PiD when you
+> want the strongest result and do not mind a short GPU wait.
 
 ---
 
@@ -131,18 +124,20 @@ source and push.
 
 ---
 
-## Optional: the PiD GPU tiers
+## The NVIDIA PiD engine
 
-To light up the NVIDIA PiD quality tiers, deploy the backends (code lives in `space/` and
-`modal/`) and paste their public, non-secret URLs into `src/config.ts`:
+PiD runs on Modal (serverless GPU). The backend code lives in `modal/modal_app.py`: it clones
+NVIDIA PiD, bakes the bundled weights (decoder + VAE, no gated FLUX needed) into the image, and
+serves `GET /health` and `POST /upscale`. Deploy and wire it with:
 
-| Tier | Command | Set in `src/config.ts` |
-|------|---------|------------------------|
-| Modal | `modal deploy modal/modal_app.py` | `modalEndpoint` |
-| HF Space | push `space/` to a new Space, Hardware = ZeroGPU | `hfSpace` |
+| Backend | Command | Set in `src/config.ts` |
+|---------|---------|------------------------|
+| Modal (primary) | `modal deploy modal/modal_app.py` | `modalBase` (the printed `*.modal.run` base) |
+| HF Space (optional secondary) | push `space/` to a new Space, Hardware = ZeroGPU | `hfSpace` |
 
 No secret is placed in the front end. Modal and Hugging Face auth stay server side. Leave both
-empty and the app simply runs on the in-browser engine.
+empty and the **NVIDIA PiD** option simply shows as unavailable while the browser engines keep
+working.
 
 ---
 

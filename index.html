@@ -51,16 +51,21 @@
 
       <section class="stage" data-state="idle" aria-live="polite">
         <!-- IDLE: quality selector + drop zone -->
-        <div class="quality-toggle" role="radiogroup" aria-label="Engine quality">
-          <button class="q-opt is-active" data-quality="fast" role="radio" aria-checked="true" type="button">
+        <div class="quality-toggle" role="radiogroup" aria-label="Upscaling engine">
+          <button class="q-opt is-active" data-engine="fast" role="radio" aria-checked="true" type="button">
             <span class="q-name">Fast</span>
-            <span class="q-desc">Instant · great for most images</span>
+            <span class="q-desc">Instant · in your browser</span>
           </button>
-          <button class="q-opt" data-quality="high" role="radio" aria-checked="false" type="button">
+          <button class="q-opt" data-engine="high" role="radio" aria-checked="false" type="button">
             <span class="q-name">High Detail</span>
-            <span class="q-desc">Sharper · heavier model</span>
+            <span class="q-desc">Sharper · in your browser</span>
+          </button>
+          <button class="q-opt q-opt--pid" data-engine="pid" role="radio" aria-checked="false" type="button">
+            <span class="q-name">NVIDIA PiD</span>
+            <span class="q-desc" id="pid-desc">Best quality · GPU diffusion</span>
           </button>
         </div>
+        <p class="engine-notice" id="engine-notice" hidden></p>
         <label class="dropzone" id="dropzone">
           <input type="file" id="file-input" accept="image/png,image/jpeg,image/webp" hidden />
           <span class="crop crop--tl" aria-hidden="true"></span>

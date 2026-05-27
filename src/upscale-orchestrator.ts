@@ -1,20 +1,20 @@
-import { config, type Quality } from "./config";
+import { config, pidConfigured, type Engine, type BrowserQuality } from "./config";
 import { downscaleIfNeeded } from "./image-utils";
-import { ModalProvider } from "./providers/modal-client";
+import { ModalProvider, modalHealthy } from "./providers/modal-client";
 import { HuggingFaceProvider } from "./providers/zerogpu-client";
 import { BrowserProvider } from "./providers/onnx-realesrgan";
 import type { UpscaleProvider, UpscaleResult } from "./providers/types";
 
-export interface OrchestratorOptions {
-  /** Neutral, user-facing status text. Never says "busy" / "not ready". */
+export interface UpscaleOptions {
+  /** Which engine the user picked. */
+  engine: Engine;
+  /** Neutral, user-facing status text. */
   onProgress?: (message: string) => void;
-  /** Which in-browser model to use when the browser tier runs. */
-  quality?: Quality;
   /** Aborts the whole operation (user pressed Cancel). */
   signal?: AbortSignal;
 }
 
-/** Thrown when the user cancels; the UI treats this as "return to idle", not an error. */
+/** Thrown when the user cancels; the UI returns to idle, not an error. */
 export class CancelledError extends Error {
   constructor() {
     super("Upscale cancelled");
@@ -22,45 +22,69 @@ export class CancelledError extends Error {
   }
 }
 
+/** Thrown when the NVIDIA PiD engine can't serve (down, timed out, or over quota). */
+export class PidUnavailableError extends Error {
+  constructor(readonly rateLimited: boolean) {
+    super("NVIDIA PiD is unavailable");
+    this.name = "PidUnavailableError";
+  }
+}
+
 /**
- * Run the failover chain: Tier 1 (Modal/PiD) → Tier 2 (HF Space/PiD) → Tier 3 (in-browser).
- *
- * Each remote tier gets a wall-clock timeout; on timeout or error we transparently fall
- * through to the next engine. The in-browser tier is always configured and never rejects
- * for capacity reasons, so a result is always produced, the user never sees a hard
- * "engine unavailable" failure (unless they cancel).
+ * Upscale with the chosen engine.
+ *  - "fast" / "high": run the in-browser Real-ESRGAN model (local, always works).
+ *  - "pid": run NVIDIA PiD on a GPU (Modal, then the HF Space). If no PiD backend can
+ *    serve, throws PidUnavailableError so the UI can disable the button and message the user.
  */
-export async function upscale(
+export async function upscale(file: Blob, options: UpscaleOptions): Promise<UpscaleResult> {
+  return options.engine === "pid"
+    ? runPid(file, options)
+    : runBrowser(file, options.engine, options);
+}
+
+async function runBrowser(
   file: Blob,
-  options: OrchestratorOptions = {},
+  quality: BrowserQuality,
+  options: UpscaleOptions,
 ): Promise<UpscaleResult> {
-  const quality = options.quality ?? config.defaultQuality;
-  const browser = config.onnxModels[quality];
-
-  const providers: UpscaleProvider[] = [
-    new ModalProvider(),
-    new HuggingFaceProvider(),
-    new BrowserProvider(browser.label, browser.url),
-  ]
-    .filter((p) => p.isConfigured())
-    .sort((a, b) => a.tier - b.tier);
-
-  // Cap the longest edge before any engine runs. Saves GPU seconds on remote tiers and -
-  // critically, bounds the in-browser tier's 4× output canvas so a large upload can't OOM
-  // the tab (the browser tier is the active path until a GPU backend is configured).
+  const model = config.onnxModels[quality];
   const input = await downscaleIfNeeded(file, config.inputCap[quality]);
+  const provider = new BrowserProvider(model.label, model.url);
 
-  let lastError: unknown;
+  const controller = new AbortController();
+  const onAbort = () => controller.abort();
+  options.signal?.addEventListener("abort", onAbort, { once: true });
+  try {
+    const blob = await provider.run(input, {
+      signal: controller.signal,
+      onProgress: options.onProgress,
+    });
+    return { blob, engine: provider.name, tier: provider.tier };
+  } catch (err) {
+    if (options.signal?.aborted) throw new CancelledError();
+    throw err;
+  } finally {
+    options.signal?.removeEventListener("abort", onAbort);
+  }
+}
+
+async function runPid(file: Blob, options: UpscaleOptions): Promise<UpscaleResult> {
+  const providers: UpscaleProvider[] = [new ModalProvider(), new HuggingFaceProvider()].filter(
+    (p) => p.isConfigured(),
+  );
+  if (providers.length === 0) throw new PidUnavailableError(false);
+
+  // PiD center-crops to 512 itself, so a modest cap keeps uploads small without losing detail.
+  const input = await downscaleIfNeeded(file, 1024);
+
+  let rateLimited = false;
   for (const provider of providers) {
     if (options.signal?.aborted) throw new CancelledError();
 
-    const timeoutMs = timeoutFor(provider);
     const controller = new AbortController();
     const onAbort = () => controller.abort();
     options.signal?.addEventListener("abort", onAbort, { once: true });
-    const timer =
-      timeoutMs > 0 ? setTimeout(() => controller.abort(), timeoutMs) : undefined;
-
+    const timer = setTimeout(() => controller.abort(), config.timeouts.pidMs);
     try {
       const blob = await provider.run(input, {
         signal: controller.signal,
@@ -68,28 +92,30 @@ export async function upscale(
       });
       return { blob, engine: provider.name, tier: provider.tier };
     } catch (err) {
-      // A user cancel aborts the whole chain; a timeout/error just moves to the next engine.
       if (options.signal?.aborted) throw new CancelledError();
-      lastError = err;
-      options.onProgress?.("Switching to the next engine…");
+      if ((err as { rateLimited?: boolean }).rateLimited) rateLimited = true;
     } finally {
       options.signal?.removeEventListener("abort", onAbort);
-      if (timer) clearTimeout(timer);
+      clearTimeout(timer);
     }
   }
-
-  throw new Error(
-    `All upscaling engines failed${lastError ? `: ${String(lastError)}` : ""}`,
-  );
+  throw new PidUnavailableError(rateLimited);
 }
 
-function timeoutFor(provider: UpscaleProvider): number {
-  switch (provider.tier) {
-    case 1:
-      return config.timeouts.modalMs;
-    case 2:
-      return config.timeouts.hfSpaceMs;
-    default:
-      return 0; // in-browser: no timeout, it always finishes
+/**
+ * Quick availability probe for the UI: is any PiD backend reachable right now?
+ * Used to enable or disable the "NVIDIA PiD" button before the user commits to a slow run.
+ */
+export async function checkPidAvailable(): Promise<boolean> {
+  if (!pidConfigured()) return false;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), config.timeouts.healthMs);
+  try {
+    if (config.modalBase && (await modalHealthy(controller.signal))) return true;
+    // An HF Space can't be cheaply probed without spending quota; treat configured as available
+    // and let a real request decide.
+    return config.hfSpace.trim().length > 0;
+  } finally {
+    clearTimeout(timer);
   }
 }

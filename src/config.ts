@@ -5,12 +5,11 @@
  * credentials. No API token, HF token, or GitHub PAT ever belongs in this file or any
  * other file under src/, a GitHub Pages site is world-readable. Backend auth lives
  * server-side (inside the Modal function / HF Space), never in the browser.
- *
- * Tiers the orchestrator tries in order. Leave a value empty ("") to disable that tier;
- * the orchestrator skips unconfigured tiers and falls through to the in-browser engine,
- * so the site is fully functional even before any GPU backend is deployed.
  */
-export type Quality = "fast" | "high";
+
+/** What the user can pick. fast/high run locally in the browser; pid runs NVIDIA PiD on a GPU. */
+export type Engine = "fast" | "high" | "pid";
+export type BrowserQuality = "fast" | "high";
 
 export interface OnnxModel {
   url: string;
@@ -19,25 +18,24 @@ export interface OnnxModel {
 }
 
 export interface AppConfig {
-  /** Tier 1, Modal serverless GPU endpoint (reliable primary). Full https URL of the POST endpoint. */
-  modalEndpoint: string;
-  /** Tier 2, Hugging Face ZeroGPU Space id, e.g. "natekali/pid-upscaler" (free accelerator). */
+  /** NVIDIA PiD on Modal: base URL of the deployed asgi app (serves /upscale and /health). */
+  modalBase: string;
+  /** NVIDIA PiD on a Hugging Face ZeroGPU Space id, e.g. "0ximg/pid-upscaler" (secondary). */
   hfSpace: string;
-  /** Tier 3, in-browser Real-ESRGAN models, by quality. Vendored same-origin (no CORS). */
-  onnxModels: Record<Quality, OnnxModel>;
-  defaultQuality: Quality;
-  /** Longest input edge (px) before 4× upscaling, per quality. Bounds compute + output size. */
-  inputCap: Record<Quality, number>;
-  /** Per-tier wall-clock timeouts (ms) before failing over to the next tier. */
-  timeouts: { modalMs: number; hfSpaceMs: number };
+  /** In-browser Real-ESRGAN models, by quality. Vendored same-origin (no CORS). */
+  onnxModels: Record<BrowserQuality, OnnxModel>;
+  /** Longest input edge (px) before 4× upscaling, per browser quality. Bounds compute + output. */
+  inputCap: Record<BrowserQuality, number>;
+  /** Wall-clock timeouts (ms). PiD is a cold GPU + diffusion, so it gets a long budget. */
+  timeouts: { pidMs: number; healthMs: number };
 }
 
 const base = import.meta.env.BASE_URL; // "/" in dev, "/imgupscaler/" on Pages
 
 export const config: AppConfig = {
-  // Filled in after `modal deploy` (optional). Example: "https://natekali--pid-upscaler-web.modal.run/upscale"
-  modalEndpoint: "",
-  // Filled in after the HF Space is created (optional). Example: "natekali/pid-upscaler"
+  // NVIDIA PiD on Modal (deployed). The asgi base; provider appends /upscale and /health.
+  modalBase: "https://guykalikey--upscaler-ai-pid-web.modal.run",
+  // Optional secondary PiD backend (HF ZeroGPU Space id).
   hfSpace: "",
 
   onnxModels: {
@@ -46,10 +44,14 @@ export const config: AppConfig = {
     // Full RRDBNet x4plus, higher detail, heavier (best with WebGPU).
     high: { url: `${base}models/realesrgan-x4plus.onnx`, label: "Real-ESRGAN HD" },
   },
-  defaultQuality: "fast",
 
   // High mode runs a 23-block network, so cap its input smaller to stay responsive on WASM.
   inputCap: { fast: 1536, high: 832 },
 
-  timeouts: { modalMs: 90_000, hfSpaceMs: 90_000 },
+  timeouts: { pidMs: 240_000, healthMs: 25_000 },
 };
+
+/** Whether any NVIDIA PiD backend is wired up at all. */
+export function pidConfigured(): boolean {
+  return config.modalBase.trim().length > 0 || config.hfSpace.trim().length > 0;
+}
