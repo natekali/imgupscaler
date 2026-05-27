@@ -1,0 +1,11 @@
+node_modules/
+dist/
+*.local
+.DS_Store
+.vscode/
+# Never commit secrets / auth artifacts
+.env
+.env.*
+*.pem
+.huggingface/
+.modal.toml

@@ -1,0 +1,9 @@
+# Resolve — HF ZeroGPU Space dependencies.
+# PiD is installed straight from the official repo; it brings its own deps
+# (diffusers>=0.37, transformers>=4.57, hydra-core, omegaconf, einops, safetensors, …)
+# via its setup.py.
+gradio>=5.12.0
+spaces
+huggingface_hub
+pillow
+git+https://github.com/nv-tlabs/PiD.git

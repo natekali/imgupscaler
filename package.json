@@ -1,0 +1,21 @@
+{
+  "name": "imgupscaler",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Simple AI image upscaler powered by NVIDIA PiD, with a resilient multi-tier engine.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@gradio/client": "^1.14.0",
+    "img-comparison-slider": "^8.0.6",
+    "onnxruntime-web": "^1.20.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5"
+  }
+}

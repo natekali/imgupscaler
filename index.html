@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Resolve — AI Image Upscaler, powered by NVIDIA PiD</title>
+    <meta
+      name="description"
+      content="Drop a low-resolution image and get a crisp, 4K-grade upscale in seconds. Powered by NVIDIA's PiD diffusion decoder. Images are processed in-memory and never stored."
+    />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%230b0c0e'/><circle cx='50' cy='50' r='26' fill='none' stroke='%23d4ff3d' stroke-width='6'/><circle cx='50' cy='50' r='6' fill='%23d4ff3d'/></svg>" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,300;1,9..144,400&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div class="grain" aria-hidden="true"></div>
+    <div class="lightbox" aria-hidden="true"></div>
+
+    <header class="masthead">
+      <a class="wordmark" href="/imgupscaler/">
+        <span class="reticle" aria-hidden="true"></span>
+        Resolve
+      </a>
+      <a
+        class="pid-badge"
+        href="https://research.nvidia.com/labs/sil/projects/pid/"
+        target="_blank"
+        rel="noopener"
+      >
+        <span class="pid-dot" aria-hidden="true"></span>
+        Powered by <strong>NVIDIA&nbsp;PiD</strong>
+      </a>
+    </header>
+
+    <main class="shell">
+      <section class="hero">
+        <p class="eyebrow">AI Super-Resolution · 4× · 4K-grade</p>
+        <h1 class="title" data-resolve>
+          Bring every pixel <em>into&nbsp;focus.</em>
+        </h1>
+        <p class="lede">
+          Drop a low-resolution image and watch it sharpen into a clean, high-resolution
+          result — decoded by NVIDIA's brand-new <strong>PiD</strong> pixel-diffusion model,
+          with a resilient engine that always returns a result.
+        </p>
+      </section>
+
+      <section class="stage" data-state="idle" aria-live="polite">
+        <!-- IDLE: drop zone -->
+        <label class="dropzone" id="dropzone">
+          <input type="file" id="file-input" accept="image/png,image/jpeg,image/webp" hidden />
+          <span class="crop crop--tl" aria-hidden="true"></span>
+          <span class="crop crop--tr" aria-hidden="true"></span>
+          <span class="crop crop--bl" aria-hidden="true"></span>
+          <span class="crop crop--br" aria-hidden="true"></span>
+          <span class="dz-icon" aria-hidden="true">
+            <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5">
+              <circle cx="24" cy="24" r="13" />
+              <path d="M24 18v12M18 24h12" stroke-linecap="round" />
+            </svg>
+          </span>
+          <span class="dz-title">Drop an image to enhance</span>
+          <span class="dz-sub">or <u>browse</u> — PNG, JPG, or WebP</span>
+        </label>
+
+        <!-- PROCESSING: live preview with scan-line -->
+        <div class="processing">
+          <div class="proc-frame">
+            <img class="proc-img" id="proc-img" alt="" />
+            <span class="scanline" aria-hidden="true"></span>
+            <span class="crop crop--tl" aria-hidden="true"></span>
+            <span class="crop crop--tr" aria-hidden="true"></span>
+            <span class="crop crop--bl" aria-hidden="true"></span>
+            <span class="crop crop--br" aria-hidden="true"></span>
+          </div>
+          <div class="proc-readout">
+            <span class="proc-status" id="proc-status">Initializing engine…</span>
+            <div class="proc-bar"><span class="proc-bar-fill" id="proc-bar-fill"></span></div>
+          </div>
+        </div>
+
+        <!-- RESULT: before/after compare + meta -->
+        <div class="result">
+          <div class="compare-wrap" id="compare-wrap"></div>
+          <div class="result-bar">
+            <dl class="meta" id="result-meta"></dl>
+            <div class="actions">
+              <button class="btn btn--ghost" id="reset-btn" type="button">New image</button>
+              <button class="btn btn--signal" id="download-btn" type="button">
+                Download 4K
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ERROR (rare; floor normally prevents this) -->
+        <div class="errorbox">
+          <p class="err-msg" id="err-msg"></p>
+          <button class="btn btn--ghost" id="err-reset" type="button">Try another image</button>
+        </div>
+      </section>
+
+      <p class="privacy">
+        <span class="lock" aria-hidden="true">●</span>
+        Your image is processed in-memory and <strong>never stored</strong> — it's discarded
+        the moment you download or reset.
+      </p>
+    </main>
+
+    <footer class="footer">
+      <span
+        >Upscaling by <a href="https://github.com/nv-tlabs/PiD" target="_blank" rel="noopener">NVIDIA&nbsp;PiD</a>,
+        with an in-browser Real-ESRGAN fallback.</span
+      >
+      <span class="src"
+        ><a href="https://github.com/natekali/imgupscaler" target="_blank" rel="noopener"
+          >Source on GitHub</a
+        ></span
+      >
+    </footer>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
