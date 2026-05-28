@@ -1,6 +1,6 @@
 import { config, pidConfigured, type Engine, type BrowserQuality } from "./config";
 import { downscaleIfNeeded } from "./image-utils";
-import { ModalProvider, modalHealthy } from "./providers/modal-client";
+import { ModalProvider } from "./providers/modal-client";
 import { HuggingFaceProvider } from "./providers/zerogpu-client";
 import { BrowserProvider } from "./providers/onnx-realesrgan";
 import type { UpscaleProvider, UpscaleResult } from "./providers/types";
@@ -106,18 +106,26 @@ async function runPid(file: Blob, options: UpscaleOptions): Promise<UpscaleResul
 }
 
 /**
- * Quick availability probe for the UI: is any PiD backend reachable right now?
- * Used to enable or disable the "NVIDIA PiD" button before the user commits to a slow run.
+ * Three-state PiD probe used by the UI. We distinguish a truly-broken backend (disable
+ * the button) from one that's merely cold (let the user select, the upload will trigger
+ * the warm-up). Returning "warming" on network/timeout errors is the right default: cold
+ * boots can take ~60s, far longer than any pre-flight wait the user would tolerate.
  */
-export async function checkPidAvailable(): Promise<boolean> {
-  if (!pidConfigured()) return false;
+export type PidStatus = "ready" | "warming" | "rate_limited";
+
+export async function probePid(): Promise<PidStatus> {
+  if (!pidConfigured()) return "rate_limited";
+  if (!config.modalBase) return "warming";
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), config.timeouts.healthMs);
   try {
-    if (config.modalBase && (await modalHealthy(controller.signal))) return true;
-    // An HF Space can't be cheaply probed without spending quota; treat configured as available
-    // and let a real request decide.
-    return config.hfSpace.trim().length > 0;
+    const res = await fetch(`${config.modalBase}/health`, { signal: controller.signal });
+    if (res.status === 429) return "rate_limited";
+    if (!res.ok) return "warming";
+    const body = (await res.json()) as { warm?: boolean };
+    return body.warm ? "ready" : "warming";
+  } catch {
+    return "warming";
   } finally {
     clearTimeout(timer);
   }

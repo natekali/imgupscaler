@@ -33,8 +33,9 @@ export interface AppConfig {
 const base = import.meta.env.BASE_URL; // "/" in dev, "/imgupscaler/" on Pages
 
 export const config: AppConfig = {
-  // NVIDIA PiD on Modal (deployed). The asgi base; provider appends /upscale and /health.
-  modalBase: "https://guykalikey--upscaler-ai-pid-web.modal.run",
+  // NVIDIA PiD on Modal (deployed as a Modal Cls; model is loaded once per container).
+  // The asgi base; provider appends /upscale and /health.
+  modalBase: "https://guykalikey--upscaler-ai-pid-pidservice-web.modal.run",
   // Optional secondary PiD backend (HF ZeroGPU Space id).
   hfSpace: "",
 
@@ -48,7 +49,7 @@ export const config: AppConfig = {
   // High mode runs a 23-block network, so cap its input smaller to stay responsive on WASM.
   inputCap: { fast: 1536, high: 832 },
 
-  timeouts: { pidMs: 240_000, healthMs: 25_000 },
+  timeouts: { pidMs: 240_000, healthMs: 5_000 },
 };
 
 /** Whether any NVIDIA PiD backend is wired up at all. */

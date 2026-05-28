@@ -933,3 +933,83 @@ img-comparison-slider img {
 :root {
   --ink-faint: rgba(242, 239, 230, 0.5);
 }
+
+/* ---------- 1:1 actual-size viewer (lightbox) ---------- */
+.zoom-trigger {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  z-index: 3;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 5px 11px;
+  border-radius: 100px;
+  background: rgba(11, 12, 14, 0.72);
+  border: 1px solid var(--line-strong);
+  color: var(--ink);
+  backdrop-filter: blur(6px);
+  cursor: pointer;
+  transition: color 0.3s var(--ease), border-color 0.3s var(--ease);
+}
+.zoom-trigger:hover {
+  color: var(--signal);
+  border-color: var(--signal);
+}
+.zoom-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(5, 6, 8, 0.92);
+  display: grid;
+  grid-template-rows: 1fr auto;
+  padding: 20px;
+  gap: 12px;
+}
+.zoom-viewer[hidden] {
+  display: none;
+}
+.zoom-scroll {
+  overflow: auto;
+  align-self: stretch;
+  justify-self: center;
+  max-width: 100%;
+  max-height: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg-raised);
+}
+.zoom-img {
+  display: block;
+  /* No width/height attributes: the image renders at its natural pixel size. */
+  image-rendering: -webkit-optimize-contrast;
+}
+.zoom-close {
+  position: absolute;
+  top: 14px;
+  right: 18px;
+  width: 36px;
+  height: 36px;
+  background: none;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  color: var(--ink);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.3s var(--ease), border-color 0.3s var(--ease);
+}
+.zoom-close:hover {
+  color: var(--signal);
+  border-color: var(--signal);
+}
+.zoom-hint {
+  grid-row: 2;
+  margin: 0;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
+}

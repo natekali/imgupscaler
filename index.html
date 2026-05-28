@@ -214,6 +214,15 @@
       </dl>
     </section>
 
+    <!-- 1:1 native-size viewer: opens when the user clicks "View 1:1" on the result. -->
+    <div class="zoom-viewer" id="zoom-viewer" hidden role="dialog" aria-modal="true" aria-label="Actual pixel size view">
+      <button class="zoom-close" id="zoom-close" aria-label="Close viewer" type="button">×</button>
+      <p class="zoom-hint">Actual pixel size · scroll or drag to pan · press Esc to close</p>
+      <div class="zoom-scroll" id="zoom-scroll">
+        <img class="zoom-img" id="zoom-img" alt="Upscaled image at actual pixel size" />
+      </div>
+    </div>
+
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",

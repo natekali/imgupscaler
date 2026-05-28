@@ -1,6 +1,6 @@
 import "./styles/main.css";
 import "img-comparison-slider";
-import { upscale, CancelledError, PidUnavailableError, checkPidAvailable } from "./upscale-orchestrator";
+import { upscale, CancelledError, PidUnavailableError, probePid } from "./upscale-orchestrator";
 import { getDimensions } from "./image-utils";
 import { pidConfigured, type Engine } from "./config";
 
@@ -52,6 +52,10 @@ const errReset = $<HTMLButtonElement>("#err-reset");
 const pidBtn = document.querySelector<HTMLButtonElement>('.q-opt[data-engine="pid"]');
 const pidDesc = document.querySelector<HTMLElement>("#pid-desc");
 const engineNotice = $<HTMLElement>("#engine-notice");
+const zoomViewer = $<HTMLElement>("#zoom-viewer");
+const zoomImg = $<HTMLImageElement>("#zoom-img");
+const zoomScroll = $<HTMLElement>("#zoom-scroll");
+const zoomClose = $<HTMLButtonElement>("#zoom-close");
 
 let engine: Engine = "fast";
 let pidDisabled = false; // set when PiD is confirmed unavailable / over quota
@@ -144,7 +148,12 @@ async function showResult(original: Blob, result: Blob, engine: string): Promise
   // Credit the engine that actually ran, don't claim PiD when the in-browser floor produced it.
   const beforeTag = tag("Before", "cmp-tag--before");
   const afterTag = tag(`After · ${engine}`, "cmp-tag--after");
-  compareWrap.append(slider, beforeTag, afterTag);
+  const zoomTrigger = document.createElement("button");
+  zoomTrigger.type = "button";
+  zoomTrigger.className = "zoom-trigger";
+  zoomTrigger.textContent = "View 1:1";
+  zoomTrigger.addEventListener("click", openZoomViewer);
+  compareWrap.append(slider, beforeTag, afterTag, zoomTrigger);
 
   const size = metaItem("Size", formatBytes(result.size));
   sizeEl = size.querySelector("dd");
@@ -216,6 +225,23 @@ function download(): void {
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
+/** Show the upscaled result at its native pixel size in a scrollable lightbox. */
+function openZoomViewer(): void {
+  const after = compareWrap.querySelector<HTMLImageElement>('img[slot="second"]');
+  if (!after) return;
+  zoomImg.src = after.src;
+  zoomViewer.hidden = false;
+  // Center the scroll on first paint so big images aren't anchored to top-left.
+  requestAnimationFrame(() => {
+    zoomScroll.scrollLeft = Math.max(0, (zoomImg.naturalWidth - zoomScroll.clientWidth) / 2);
+    zoomScroll.scrollTop = Math.max(0, (zoomImg.naturalHeight - zoomScroll.clientHeight) / 2);
+  });
+}
+function closeZoomViewer(): void {
+  zoomViewer.hidden = true;
+  zoomImg.removeAttribute("src");
+}
+
 async function copyToClipboard(): Promise<void> {
   if (!pngBlob) return;
   const supported = "clipboard" in navigator && typeof ClipboardItem !== "undefined";
@@ -242,6 +268,7 @@ function flashButton(btn: HTMLButtonElement, message: string, isError = false): 
 function reset(): void {
   activeRun?.abort();
   activeRun = null;
+  if (!zoomViewer.hidden) closeZoomViewer();
   revokeAll();
   pngBlob = null;
   downloadBlob = null;
@@ -308,19 +335,24 @@ async function selectPid(seq: number): Promise<void> {
   if (!pidConfigured()) return markPidUnavailable(false);
   pidChecking = true;
   if (pidDesc) pidDesc.textContent = "Checking availability…";
-  const available = await checkPidAvailable();
+  const status = await probePid();
   pidChecking = false;
   if (seq !== selectSeq) {
     // The user picked a different engine while we were checking; respect that.
     if (pidDesc) pidDesc.textContent = "Best quality · GPU diffusion";
     return;
   }
-  if (available) {
-    if (pidDesc) pidDesc.textContent = "Best quality · GPU diffusion";
-    clearNotice();
-    setEngineActive("pid");
-  } else {
-    markPidUnavailable(false);
+  if (status === "rate_limited") {
+    markPidUnavailable(true);
+    return;
+  }
+  // status is "ready" or "warming". Both are selectable: a cold-but-up backend just needs
+  // the first request to warm it up (the staged progress copy keeps the user informed).
+  clearNotice();
+  setEngineActive("pid");
+  if (pidDesc) {
+    pidDesc.textContent =
+      status === "ready" ? "Best quality · GPU diffusion" : "Best quality · warming up GPU…";
   }
 }
 
@@ -397,4 +429,14 @@ downloadBtn.addEventListener("click", download);
 copyBtn.addEventListener("click", () => void copyToClipboard());
 resetBtn.addEventListener("click", reset);
 errReset.addEventListener("click", reset);
+
+zoomClose.addEventListener("click", closeZoomViewer);
+zoomViewer.addEventListener("click", (e) => {
+  // Click on the dim backdrop (anywhere outside the scroll area) closes the viewer.
+  if (e.target === zoomViewer) closeZoomViewer();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !zoomViewer.hidden) closeZoomViewer();
+});
+
 window.addEventListener("beforeunload", revokeAll);
