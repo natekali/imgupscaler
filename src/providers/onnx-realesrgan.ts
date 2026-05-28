@@ -8,10 +8,16 @@ const ORT_ESM = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dis
 const ORT_WASM_DIR = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/`;
 
 const SCALE = 4; // Real-ESRGAN x4
-const TILE = 128; // core tile edge (px), bounds GPU/WASM memory
-const PAD = 16; // context padding read around each tile, discarded after inference (kills seams)
+// Tile + padding sized per execution provider. WebGPU handles bigger tiles fast,
+// WASM stays at the smaller original tile to keep memory and per-tile time reasonable.
+const TILE_WEBGPU = 256;
+const PAD_WEBGPU = 24;
+const TILE_WASM = 128;
+const PAD_WASM = 16;
 
 type OrtModule = typeof import("onnxruntime-web");
+type ExecutionProvider = "webgpu" | "wasm";
+
 let ortPromise: Promise<OrtModule> | null = null;
 
 async function loadOrt(): Promise<OrtModule> {
@@ -25,21 +31,49 @@ async function loadOrt(): Promise<OrtModule> {
   return ortPromise;
 }
 
-// Sessions are cached per model URL so switching quality back and forth doesn't reload.
-const sessions = new Map<string, Promise<Ort.InferenceSession>>();
+// One-shot WebGPU support detection, cached. Avoids re-throwing through onnxruntime-web on
+// every session create and lets the UI know which runtime to expect.
+let webgpuPromise: Promise<boolean> | null = null;
+function webgpuSupported(): Promise<boolean> {
+  if (webgpuPromise === null) {
+    webgpuPromise = (async () => {
+      try {
+        const nav = navigator as Navigator & { gpu?: { requestAdapter: () => Promise<unknown> } };
+        if (!nav.gpu) return false;
+        return !!(await nav.gpu.requestAdapter());
+      } catch {
+        return false;
+      }
+    })();
+  }
+  return webgpuPromise;
+}
 
-function getSession(ort: OrtModule, url: string): Promise<Ort.InferenceSession> {
+interface CachedSession {
+  session: Ort.InferenceSession;
+  ep: ExecutionProvider;
+}
+
+// Sessions are cached per model URL so switching quality back and forth doesn't reload.
+const sessions = new Map<string, Promise<CachedSession>>();
+
+function getSession(ort: OrtModule, url: string): Promise<CachedSession> {
   const cached = sessions.get(url);
   if (cached) return cached;
-  const attempt = (async () => {
-    try {
-      return await ort.InferenceSession.create(url, { executionProviders: ["webgpu"] });
-    } catch {
-      return await ort.InferenceSession.create(url, { executionProviders: ["wasm"] });
+  const attempt: Promise<CachedSession> = (async () => {
+    if (await webgpuSupported()) {
+      try {
+        const session = await ort.InferenceSession.create(url, { executionProviders: ["webgpu"] });
+        return { session, ep: "webgpu" as const };
+      } catch {
+        // Fall through to WASM.
+      }
     }
+    const session = await ort.InferenceSession.create(url, { executionProviders: ["wasm"] });
+    return { session, ep: "wasm" as const };
   })();
-  // Don't cache a rejected load, a transient network failure would otherwise poison every
-  // later attempt until a full reload. Only memoize the session once it resolves.
+  // Don't cache a rejected load: a transient network failure would otherwise poison every
+  // later attempt until a full reload. Only memoize once it resolves.
   attempt.catch(() => {
     if (sessions.get(url) === attempt) sessions.delete(url);
   });
@@ -50,12 +84,14 @@ function getSession(ort: OrtModule, url: string): Promise<Ort.InferenceSession> 
 /**
  * Tier 3, Real-ESRGAN x4 running entirely in the browser via onnxruntime-web.
  *
- * This engine can never be "busy" or rate-limited: it is the unconditional floor that
- * guarantees every upload returns a result, even fully offline once the model is cached.
- * Quality is below PiD, but it always works. Runtime + model are lazy-loaded on first use.
+ * Cannot be "busy" or rate-limited: this is the unconditional floor that guarantees every
+ * upload returns a result, even fully offline once the model is cached. Runtime + model are
+ * lazy-loaded on first use; sessions per quality are cached for instant repeat runs.
  */
 export class BrowserProvider implements UpscaleProvider {
   readonly tier = 3;
+  /** Set after a successful run so the UI can surface "WebGPU" vs "WASM" in the result meta. */
+  lastExecutionProvider: ExecutionProvider | null = null;
 
   constructor(
     readonly name: string,
@@ -69,7 +105,9 @@ export class BrowserProvider implements UpscaleProvider {
   async run(input: Blob, ctx: RunContext): Promise<Blob> {
     ctx.onProgress?.("Enhancing locally in your browser…");
     const ort = await loadOrt();
-    const session = await getSession(ort, this.modelUrl);
+    const cached = await getSession(ort, this.modelUrl);
+    const { session, ep } = cached;
+    this.lastExecutionProvider = ep;
     throwIfAborted(ctx.signal);
 
     const src = await blobToImageData(input);
@@ -77,11 +115,13 @@ export class BrowserProvider implements UpscaleProvider {
     const hasAlpha = detectAlpha(src);
 
     const outCanvas = new OffscreenCanvas(w * SCALE, h * SCALE);
-    const outCtx = outCanvas.getContext("2d");
+    const outCtx = outCanvas.getContext("2d", { willReadFrequently: true, colorSpace: "srgb" });
     if (!outCtx) throw new Error("Canvas 2D context unavailable");
 
-    const cols = Math.ceil(w / TILE);
-    const rows = Math.ceil(h / TILE);
+    const tile = ep === "webgpu" ? TILE_WEBGPU : TILE_WASM;
+    const pad = ep === "webgpu" ? PAD_WEBGPU : PAD_WASM;
+    const cols = Math.ceil(w / tile);
+    const rows = Math.ceil(h / tile);
     const total = cols * rows;
     let done = 0;
 
@@ -90,17 +130,17 @@ export class BrowserProvider implements UpscaleProvider {
         throwIfAborted(ctx.signal);
 
         // Core region for this tile (clamped to image bounds).
-        const cx = tx * TILE;
-        const cy = ty * TILE;
-        const coreW = Math.min(TILE, w - cx);
-        const coreH = Math.min(TILE, h - cy);
+        const cx = tx * tile;
+        const cy = ty * tile;
+        const coreW = Math.min(tile, w - cx);
+        const coreH = Math.min(tile, h - cy);
 
-        // Read region = core expanded by PAD, clamped. Padding gives the model context so
+        // Read region = core expanded by pad, clamped. Padding gives the model context so
         // tile borders are seam-free; we crop the padding back off after inference.
-        const rx = Math.max(0, cx - PAD);
-        const ry = Math.max(0, cy - PAD);
-        const rw = Math.min(w, cx + coreW + PAD) - rx;
-        const rh = Math.min(h, cy + coreH + PAD) - ry;
+        const rx = Math.max(0, cx - pad);
+        const ry = Math.max(0, cy - pad);
+        const rw = Math.min(w, cx + coreW + pad) - rx;
+        const rh = Math.min(h, cy + coreH + pad) - ry;
         const padLeft = cx - rx;
         const padTop = cy - ry;
 
@@ -152,9 +192,13 @@ async function applyUpscaledAlpha(
   outW: number,
   outH: number,
 ): Promise<void> {
-  const bitmap = await createImageBitmap(source);
+  // Straight alpha + no color-space munging keeps the values the model saw.
+  const bitmap = await createImageBitmap(source, {
+    premultiplyAlpha: "none",
+    colorSpaceConversion: "none",
+  });
   const alphaCanvas = new OffscreenCanvas(outW, outH);
-  const ac = alphaCanvas.getContext("2d");
+  const ac = alphaCanvas.getContext("2d", { willReadFrequently: true, colorSpace: "srgb" });
   if (!ac) return;
   ac.imageSmoothingEnabled = true;
   ac.imageSmoothingQuality = "high";
@@ -172,9 +216,14 @@ async function applyUpscaledAlpha(
 /* ---------- pixel <-> tensor helpers (ort-agnostic) ---------- */
 
 async function blobToImageData(blob: Blob): Promise<ImageData> {
-  const bitmap = await createImageBitmap(blob);
+  // Straight alpha (not premultiplied) and no implicit color conversion so the tensor
+  // values match the source pixel values the model was trained on.
+  const bitmap = await createImageBitmap(blob, {
+    premultiplyAlpha: "none",
+    colorSpaceConversion: "none",
+  });
   const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true, colorSpace: "srgb" });
   if (!ctx) throw new Error("Canvas 2D context unavailable");
   ctx.drawImage(bitmap, 0, 0);
   bitmap.close();

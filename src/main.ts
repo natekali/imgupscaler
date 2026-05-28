@@ -45,6 +45,7 @@ const cancelBtn = $<HTMLButtonElement>("#cancel-btn");
 const compareWrap = $<HTMLElement>("#compare-wrap");
 const resultMeta = $<HTMLElement>("#result-meta");
 const downloadBtn = $<HTMLButtonElement>("#download-btn");
+const copyBtn = $<HTMLButtonElement>("#copy-btn");
 const resetBtn = $<HTMLButtonElement>("#reset-btn");
 const errMsg = $<HTMLElement>("#err-msg");
 const errReset = $<HTMLButtonElement>("#err-reset");
@@ -124,7 +125,7 @@ function setProgress(message: string): void {
 
 async function showResult(original: Blob, result: Blob, engine: string): Promise<void> {
   pngBlob = result;
-  const dims = await getDimensions(result);
+  const [inputDims, dims] = await Promise.all([getDimensions(original), getDimensions(result)]);
 
   compareWrap.style.position = "relative";
   compareWrap.replaceChildren();
@@ -149,8 +150,8 @@ async function showResult(original: Blob, result: Blob, engine: string): Promise
   sizeEl = size.querySelector("dd");
   resultMeta.replaceChildren(
     metaItem("Engine", engine),
-    metaItem("Output", `${dims.width} × ${dims.height}`),
-    metaItem("Scale", "4×", true),
+    metaItem("Input", `${inputDims.width} × ${inputDims.height}`),
+    metaItem("Output", `${dims.width} × ${dims.height}`, true),
     size,
   );
 
@@ -194,7 +195,7 @@ async function prepareDownload(): Promise<void> {
     const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
     canvas.getContext("2d")!.drawImage(bitmap, 0, 0);
     bitmap.close();
-    downloadBlob = await canvas.convertToBlob({ type: "image/jpeg", quality: 0.92 });
+    downloadBlob = await canvas.convertToBlob({ type: "image/jpeg", quality: 0.95 });
   }
   if (sizeEl) sizeEl.textContent = formatBytes(downloadBlob.size);
 }
@@ -213,6 +214,29 @@ function download(): void {
   // Defer the revoke: revoking synchronously can abort the save in Firefox/Safari before
   // the download stream starts. A short delay lets the browser take ownership first.
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+async function copyToClipboard(): Promise<void> {
+  if (!pngBlob) return;
+  const supported = "clipboard" in navigator && typeof ClipboardItem !== "undefined";
+  if (!supported) return flashButton(copyBtn, "Not supported", true);
+  try {
+    await navigator.clipboard.write([new ClipboardItem({ "image/png": pngBlob })]);
+    flashButton(copyBtn, "Copied!");
+  } catch {
+    flashButton(copyBtn, "Couldn't copy", true);
+  }
+}
+
+/** Briefly swap the button label to signal success or failure, then restore. */
+function flashButton(btn: HTMLButtonElement, message: string, isError = false): void {
+  const original = btn.textContent;
+  btn.textContent = message;
+  btn.classList.toggle("flash-error", isError);
+  window.setTimeout(() => {
+    btn.textContent = original;
+    btn.classList.remove("flash-error");
+  }, 1500);
 }
 
 function reset(): void {
@@ -370,6 +394,7 @@ window.addEventListener("paste", (e) => {
 
 cancelBtn.addEventListener("click", reset);
 downloadBtn.addEventListener("click", download);
+copyBtn.addEventListener("click", () => void copyToClipboard());
 resetBtn.addEventListener("click", reset);
 errReset.addEventListener("click", reset);
 window.addEventListener("beforeunload", revokeAll);

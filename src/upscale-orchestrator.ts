@@ -59,7 +59,10 @@ async function runBrowser(
       signal: controller.signal,
       onProgress: options.onProgress,
     });
-    return { blob, engine: provider.name, tier: provider.tier };
+    // Show which runtime served the upscale (WebGPU is faster + sharper, WASM is the floor).
+    const ep = provider.lastExecutionProvider;
+    const label = ep ? `${provider.name} (${ep === "webgpu" ? "WebGPU" : "WASM"})` : provider.name;
+    return { blob, engine: label, tier: provider.tier };
   } catch (err) {
     if (options.signal?.aborted) throw new CancelledError();
     throw err;

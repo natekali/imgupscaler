@@ -912,3 +912,24 @@ img-comparison-slider img {
   font-size: 14px;
   line-height: 1.6;
 }
+
+/* ---------- accessibility + small polish ---------- */
+:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+.btn:focus-visible,
+.q-opt:focus-visible,
+.fmt-opt:focus-visible,
+.dropzone:focus-visible {
+  outline-offset: 4px;
+}
+.flash-error {
+  color: var(--danger);
+}
+
+/* Slight contrast bump for body-role faint text (WCAG AA on dark). */
+:root {
+  --ink-faint: rgba(242, 239, 230, 0.5);
+}

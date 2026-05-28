@@ -17,6 +17,7 @@ Then put the printed `/upscale` URL in src/config.ts as `modalEndpoint`.
 """
 
 import glob
+import io
 import os
 import shutil
 import subprocess
@@ -78,6 +79,60 @@ image = (
 )
 
 
+def _pad_to_square(img_bytes: bytes, save_to: str) -> tuple[int, int, tuple[int, int, int, int]]:
+    """Pad the image to a square with edge replication so PiD's center-crop is a no-op.
+
+    Returns (orig_W, orig_H, (pad_left, pad_right, pad_top, pad_bottom)). PiD's from-clean
+    pipeline always center-crops + resizes to a square; if we feed it a non-square image we
+    permanently lose the side bands. Padding preserves the full image, and we crop the
+    upscaled output back to the original aspect afterwards.
+    """
+    from PIL import Image
+    import numpy as np
+
+    img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+    W, H = img.size
+    side = max(W, H)
+    pad_left = (side - W) // 2
+    pad_right = side - W - pad_left
+    pad_top = (side - H) // 2
+    pad_bottom = side - H - pad_top
+    if pad_left or pad_right or pad_top or pad_bottom:
+        arr = np.array(img)
+        padded = np.pad(
+            arr,
+            ((pad_top, pad_bottom), (pad_left, pad_right), (0, 0)),
+            mode="edge",
+        )
+        img = Image.fromarray(padded)
+    img.save(save_to, format="PNG", optimize=False)
+    return W, H, (pad_left, pad_right, pad_top, pad_bottom)
+
+
+def _crop_to_aspect(
+    pid_out_path: str,
+    orig_w: int,
+    orig_h: int,
+    pad: tuple[int, int, int, int],
+) -> bytes:
+    """Crop the PiD square output back to the original aspect ratio (at the 4x scale)."""
+    from PIL import Image
+
+    pad_left, pad_right, pad_top, pad_bottom = pad
+    out = Image.open(pid_out_path)
+    out_w, _ = out.size  # PiD output is square
+    side = orig_w + pad_left + pad_right
+    scale = out_w / side
+    left = int(round(pad_left * scale))
+    top = int(round(pad_top * scale))
+    right = int(round((pad_left + orig_w) * scale))
+    bottom = int(round((pad_top + orig_h) * scale))
+    cropped = out.crop((left, top, right, bottom))
+    buf = io.BytesIO()
+    cropped.save(buf, format="PNG", optimize=False)
+    return buf.getvalue()
+
+
 def _run_pid(input_path: str, output_dir: str) -> str:
     """Invoke PiD's from-clean Flux upscaler and return the path of the 'ours' (PiD) output."""
     cmd = [
@@ -136,11 +191,12 @@ def web():
         work = tempfile.mkdtemp(prefix="pid_")
         try:
             in_path = os.path.join(work, "input.png")
-            with open(in_path, "wb") as f:
-                f.write(await image.read())
-            out_path = _run_pid(in_path, os.path.join(work, "out"))
-            with open(out_path, "rb") as f:
-                data = f.read()
+            raw = await image.read()
+            # Pad to square (edge-replicate) so PiD's mandatory center-crop is a no-op
+            # and no content is lost; remember the padding so we can crop the output back.
+            orig_w, orig_h, pad = _pad_to_square(raw, in_path)
+            pid_out_path = _run_pid(in_path, os.path.join(work, "out"))
+            data = _crop_to_aspect(pid_out_path, orig_w, orig_h, pad)
             return Response(content=data, media_type="image/png")
         except Exception as e:
             print("PiD upscale failed:", e)

@@ -16,29 +16,58 @@ export class ModalProvider implements UpscaleProvider {
   }
 
   async run(input: Blob, ctx: RunContext): Promise<Blob> {
-    ctx.onProgress?.("Enhancing with NVIDIA PiD… (GPU warming up, up to a minute)");
+    // PiD is slow (cold GPU boot + diffusion); staged copy keeps the user oriented.
+    const stages: Array<[number, string]> = [
+      [0, "Sending image to NVIDIA PiD…"],
+      [4_000, "Booting GPU (cold start, up to a minute)…"],
+      [25_000, "Loading PiD model into VRAM…"],
+      [55_000, "Running diffusion (4 steps)…"],
+      [85_000, "Finalizing 4K output…"],
+    ];
+    const start = Date.now();
+    const tick = () => {
+      const t = Date.now() - start;
+      let message = stages[0][1];
+      for (const [at, msg] of stages) if (t >= at) message = msg;
+      ctx.onProgress?.(message);
+    };
+    tick();
+    const heartbeat = window.setInterval(tick, 900);
 
-    const form = new FormData();
-    form.append("image", input, "input.png");
-
-    const res = await fetch(`${config.modalBase}/upscale`, {
-      method: "POST",
-      body: form,
-      signal: ctx.signal,
-    });
-
-    if (!res.ok) {
-      const err = new Error(`Modal PiD responded ${res.status}`) as Error & { rateLimited?: boolean };
-      // 429 = over quota, 503 = scaling/at capacity: both mean "come back later".
-      err.rateLimited = res.status === 429 || res.status === 503;
-      throw err;
+    try {
+      // Up to two attempts, transparent retry on transient infra blips (502/503/504).
+      // 429 (rate-limited) is preserved and surfaced for the UI to disable PiD.
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const form = new FormData();
+        form.append("image", input, "input.png");
+        const res = await fetch(`${config.modalBase}/upscale`, {
+          method: "POST",
+          body: form,
+          signal: ctx.signal,
+        });
+        if (res.ok) {
+          const blob = await res.blob();
+          if (!blob.type.startsWith("image/")) {
+            throw new Error("Modal PiD returned a non-image response");
+          }
+          return blob;
+        }
+        const transient = res.status === 502 || res.status === 503 || res.status === 504;
+        if (transient && attempt === 0) {
+          await new Promise((r) => setTimeout(r, 2_000));
+          continue;
+        }
+        const err = new Error(`Modal PiD responded ${res.status}`) as Error & {
+          rateLimited?: boolean;
+        };
+        // 429 = over quota / rate limit. Surface so the UI can disable the button.
+        err.rateLimited = res.status === 429;
+        throw err;
+      }
+      throw new Error("Modal PiD: unreachable");
+    } finally {
+      window.clearInterval(heartbeat);
     }
-
-    const blob = await res.blob();
-    if (!blob.type.startsWith("image/")) {
-      throw new Error("Modal PiD returned a non-image response");
-    }
-    return blob;
   }
 }
 
